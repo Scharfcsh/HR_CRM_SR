@@ -7,6 +7,7 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "warning" : "nodemon --trace-warnings index.js",
+    "build": "echo \"No build step required for backend\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -16,6 +16,7 @@ import reportRoutes from "./routes/report.route.js";
 import auditRoutes from "./routes/audit.route.js";
 import tokenRoutes from "./routes/token.route.js";
 import healthRoutes from "./routes/health.route.js";
+import leaveRoutes from "./routes/leave.route.js";
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/audit-logs", auditRoutes);
 app.use("/api/tokens", tokenRoutes);
 app.use("/api/health", healthRoutes);
+app.use("/api/leave", leaveRoutes);
 
 // if (process.env.NODE_ENV === "production") {
 // 	app.use(express.static(path.join(__dirname, "/frontend/dist")));

@@ -14,7 +14,7 @@ const AuditLogSchema = new mongoose.Schema(
       ref: "User",
     },
 
-    action: { 
+    action: {
       type: String,
       enum: [
         "INVITATION_SENT",
@@ -30,14 +30,22 @@ const AuditLogSchema = new mongoose.Schema(
         "DATA_IMPORT",
         "PERMISSION_CHANGED",
         "CHECK_IN",
-        "CHECK_OUT"
+        "CHECK_OUT",
+        "PROFILE_UPDATED",
+        "ORGANIZATION_SETTINGS_UPDATED",
+        "NOTIFICATION_PREFERENCES_UPDATED",
+        "LEAVE_POLICY_UPDATED",
+        "ATTENDANCE_POLICY_UPDATED",
+        "WORKING_HOURS_UPDATED",
+        "ORGANIZATION_INFO_UPDATED",
       ],
-      required: true }, // e.g. "CHECK_IN"
+      required: true,
+    }, // e.g. "CHECK_IN"
     metadata: { type: mongoose.Schema.Types.Mixed },
 
     ipAddress: { type: String },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export default mongoose.model("AuditLog", AuditLogSchema);

@@ -1,5 +1,5 @@
 export const EMPLOYEE_PROFILE_COMPLETION_RULES = {
-  basicInfo: ["fullName", "dateOfBirth", "address", "phone", "email"],
+  basicInfo: ["fullName", "dateOfBirth", "phone"],
 
   identityInfo: ["panEncrypted", "aadhaarEncrypted"],
 

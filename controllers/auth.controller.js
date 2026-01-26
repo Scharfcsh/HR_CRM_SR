@@ -12,11 +12,14 @@ import User from "../models/user.model.js";
 import Token from "../models/token.model.js";
 import Organization from "../models/organization.model.js";
 import EmployeeProfile from "../models/employee.model.js";
+import mongoose from "mongoose";
+import { generateEmployeeId } from "../utils/generateEmployeeId.js";
+
 
 export const signup = async (req, res) => {
-  const { email, password, organizationName, role } = req.body;
+  const { email, password, organizationName, role, firstName, lastName } = req.body;
 
-  if (!email || !password || !organizationName || !role) {
+  if (!email || !password || !organizationName || !role || !firstName || !lastName) {
     return res.status(400).json({
       success: false,
       message: "All fields are required",
@@ -39,6 +42,7 @@ export const signup = async (req, res) => {
       [
         {
           email,
+		  name: firstName + " " + lastName,
           passwordHash: hashedPassword,
           organizationId: organization[0]._id,
           role,
@@ -51,7 +55,8 @@ export const signup = async (req, res) => {
       [
         {
           userId: user[0]._id,
-          employeeId: await generateEmployeeId(), // ideally org-scoped
+		  fullName: firstName + " " + lastName,
+          employeeId: await generateEmployeeId(organization[0]._id), // ideally org-scoped
           organizationId: organization[0]._id,
         },
       ],
@@ -68,7 +73,7 @@ export const signup = async (req, res) => {
           userId: user[0]._id,
           token: verificationToken,
           tokenType: "EMAIL_VERIFICATION",
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
         },
       ],
       { session }
@@ -79,7 +84,7 @@ export const signup = async (req, res) => {
     session.endSession();
 
     // 🔐 Auth & email should happen AFTER commit
-    generateTokenAndSetCookie(res, user[0]._id);
+    generateTokenAndSetCookie(res, user[0]._id, user[0]); 
 
     // async / queue later
     await sendVerificationEmail(user[0].email, verificationToken);
@@ -118,16 +123,19 @@ export const signup = async (req, res) => {
 
 
 export const verifyEmail = async (req, res) => {
-	const { code } = req.body;
+	const { code, userId } = req.body;
+	// const userId = req.userId;
+	console.log("verifyEmail called with code: ", code, " userId: ", userId);
 	try {
 		// Find valid token
 		const tokenRecord = await Token.findOne({
 			token: code,
+			userId: userId,
 			tokenType: "EMAIL_VERIFICATION",
 			isUsed: false,
 			expiresAt: { $gt: Date.now() },
 		});
-
+		console.log("tokenRecord: ", tokenRecord);
 		if (!tokenRecord) {
 			return res.status(400).json({ success: false, message: "Invalid or expired verification code" });
 		}
@@ -180,7 +188,7 @@ export const login = async (req, res) => {
 			return res.status(400).json({ success: false, message: "Invalid credentials" });
 		}
 		
-		await generateTokenAndSetCookie(res, user._id);
+		await generateTokenAndSetCookie(res, user._id, user);
 
 		user.lastLoginAt = new Date();
 		await user.save();
@@ -234,8 +242,13 @@ export const refreshToken = async (req, res) => {
 		tokenRecord.isUsed = true;
 		await tokenRecord.save();
 
+		const user = await User.findById(tokenRecord.userId);
+		if (!user) {
+			return res.status(400).json({ success: false, message: "User not found" });
+		}
+
 		// Generate new tokens
-		await generateTokenAndSetCookie(res, tokenRecord.userId);
+		await generateTokenAndSetCookie(res, tokenRecord.userId, user);
 
 		res.status(200).json({ success: true, message: "Token refreshed successfully" });
 	} catch (error) {

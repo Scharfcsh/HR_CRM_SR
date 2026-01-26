@@ -1,5 +1,58 @@
 import Organization from "../models/organization.model.js";
 import AuditLog from "../models/audit.model.js";
+import LeaveType from "../models/leaveType.model.js";
+
+// Leave type mappings - maps organization leave policy fields to LeaveType records
+const LEAVE_TYPE_MAPPINGS = [
+	{ policyField: "annualLeave", name: "Annual Leave", category: "ANNUAL", isPaid: true },
+	{ policyField: "sickLeave", name: "Sick Leave", category: "MEDICAL", isPaid: true },
+	{ policyField: "casualLeave", name: "Casual Leave", category: "PERSONAL", isPaid: true },
+	{ policyField: "maternityLeave", name: "Maternity Leave", category: "PERSONAL", isPaid: true },
+	{ policyField: "paternityLeave", name: "Paternity Leave", category: "PERSONAL", isPaid: true },
+	{ policyField: "unpaidLeave", name: "Unpaid Leave", category: "PERSONAL", isPaid: false },
+];
+
+// Helper function to sync leave types with organization leave policy
+const syncLeaveTypesWithPolicy = async (orgId, leavePolicy) => {
+	const syncedLeaveTypes = [];
+
+	for (const mapping of LEAVE_TYPE_MAPPINGS) {
+		const maxPerYear = leavePolicy[mapping.policyField];
+
+		// Skip if the leave type has 0 days (disabled)
+		if (maxPerYear === 0) {
+			// Delete the leave type if it exists and is set to 0
+			await LeaveType.findOneAndDelete({
+				orgId,
+				name: mapping.name,
+			});
+			continue;
+		}
+
+		// Upsert: Update if exists, create if not
+		const leaveType = await LeaveType.findOneAndUpdate(
+			{ orgId, name: mapping.name },
+			{
+				$set: {
+					category: mapping.category,
+					isPaid: mapping.isPaid,
+					requiresApproval: true,
+					autoApprove: false,
+					maxPerYear: maxPerYear,
+				},
+				$setOnInsert: {
+					orgId,
+					name: mapping.name,
+				},
+			},
+			{ upsert: true, new: true }
+		);
+
+		syncedLeaveTypes.push(leaveType);
+	}
+
+	return syncedLeaveTypes;
+};
 
 export const createOrganization = async (req, res) => {
 	try {
@@ -14,11 +67,17 @@ export const createOrganization = async (req, res) => {
 			timezone: timezone || "Asia/Kolkata",
 		});
 
+		// Create default leave types based on the default leave policy
+		const defaultLeaveTypes = await syncLeaveTypesWithPolicy(
+			organization._id,
+			organization.leavePolicy
+		);
+
 		await AuditLog.create({
 			organizationId: organization._id,
 			userId: req.userId,
 			action: "ORGANIZATION_CREATED",
-			metadata: { organizationName: name },
+			metadata: { organizationName: name, defaultLeaveTypes: defaultLeaveTypes.map(lt => lt.name) },
 			ipAddress: req.ip,
 		});
 
@@ -26,6 +85,7 @@ export const createOrganization = async (req, res) => {
 			success: true,
 			message: "Organization created successfully",
 			organization,
+			leaveTypes: defaultLeaveTypes,
 		});
 	} catch (error) {
 		console.log("Error in createOrganization ", error);
@@ -51,9 +111,50 @@ export const getMyOrganization = async (req, res) => {
 	}
 };
 
-export const updateOrganizationSettings = async (req, res) => {
+// Update organization basic info
+export const updateOrganizationInfo = async (req, res) => {
 	try {
-		const { workingHours, attendancePolicy, timezone } = req.body;
+		const { name, industry, address, phone, website, logo, timezone } = req.body;
+
+		const organization = await Organization.findById(req.user.organizationId);
+
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
+
+		if (name) organization.name = name;
+		if (industry !== undefined) organization.industry = industry;
+		if (address !== undefined) organization.address = address;
+		if (phone !== undefined) organization.phone = phone;
+		if (website !== undefined) organization.website = website;
+		if (logo !== undefined) organization.logo = logo;
+		if (timezone) organization.timezone = timezone;
+
+		await organization.save();
+
+		await AuditLog.create({
+			organizationId: organization._id,
+			userId: req.userId,
+			action: "ORGANIZATION_INFO_UPDATED",
+			metadata: { name, industry, address, phone, website, timezone },
+			ipAddress: req.ip,
+		});
+
+		res.status(200).json({
+			success: true,
+			message: "Organization info updated successfully",
+			organization,
+		});
+	} catch (error) {
+		console.log("Error in updateOrganizationInfo ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Update working hours and week offs
+export const updateWorkingHours = async (req, res) => {
+	try {
+		const { workingHours, weekOffs } = req.body;
 
 		const organization = await Organization.findById(req.user.organizationId);
 
@@ -62,15 +163,14 @@ export const updateOrganizationSettings = async (req, res) => {
 		}
 
 		if (workingHours) {
-			organization.workingHours = { ...organization.workingHours, ...workingHours };
+			organization.workingHours = {
+				...organization.workingHours.toObject(),
+				...workingHours,
+			};
 		}
 
-		if (attendancePolicy) {
-			organization.attendancePolicy = { ...organization.attendancePolicy, ...attendancePolicy };
-		}
-
-		if (timezone) {
-			organization.timezone = timezone;
+		if (weekOffs && Array.isArray(weekOffs)) {
+			organization.weekOffs = weekOffs;
 		}
 
 		await organization.save();
@@ -78,8 +178,243 @@ export const updateOrganizationSettings = async (req, res) => {
 		await AuditLog.create({
 			organizationId: organization._id,
 			userId: req.userId,
+			action: "WORKING_HOURS_UPDATED",
+			metadata: { workingHours, weekOffs },
+			ipAddress: req.ip,
+		});
+
+		res.status(200).json({
+			success: true,
+			message: "Working hours updated successfully",
+			organization,
+		});
+	} catch (error) {
+		console.log("Error in updateWorkingHours ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Update attendance policy
+export const updateAttendancePolicy = async (req, res) => {
+	try {
+		const { attendancePolicy } = req.body;
+
+		const organization = await Organization.findById(req.user.organizationId);
+
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
+
+		if (attendancePolicy) {
+			organization.attendancePolicy = {
+				...organization.attendancePolicy.toObject(),
+				...attendancePolicy,
+			};
+		}
+
+		await organization.save();
+
+		await AuditLog.create({
+			organizationId: organization._id,
+			userId: req.userId,
+			action: "ATTENDANCE_POLICY_UPDATED",
+			metadata: { attendancePolicy },
+			ipAddress: req.ip,
+		});
+
+		res.status(200).json({
+			success: true,
+			message: "Attendance policy updated successfully",
+			organization,
+		});
+	} catch (error) {
+		console.log("Error in updateAttendancePolicy ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Update leave policy
+export const updateLeavePolicy = async (req, res) => {
+	try {
+		const { leavePolicy } = req.body;
+
+		const organization = await Organization.findById(req.user.organizationId);
+
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
+
+		if (leavePolicy) {
+			organization.leavePolicy = {
+				...organization.leavePolicy.toObject(),
+				...leavePolicy,
+			};
+		}
+
+		await organization.save();
+
+		// Sync leave types with the updated leave policy
+		const syncedLeaveTypes = await syncLeaveTypesWithPolicy(
+			organization._id,
+			organization.leavePolicy
+		);
+
+		await AuditLog.create({
+			organizationId: organization._id,
+			userId: req.userId,
+			action: "LEAVE_POLICY_UPDATED",
+			metadata: { leavePolicy, syncedLeaveTypes: syncedLeaveTypes.map(lt => lt.name) },
+			ipAddress: req.ip,
+		});
+
+		res.status(200).json({
+			success: true,
+			message: "Leave policy updated successfully",
+			organization,
+			leaveTypes: syncedLeaveTypes,
+		});
+	} catch (error) {
+		console.log("Error in updateLeavePolicy ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Update notification preferences
+export const updateNotificationPreferences = async (req, res) => {
+	try {
+		const { notificationPreferences } = req.body;
+
+		const organization = await Organization.findById(req.user.organizationId);
+
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
+
+		if (notificationPreferences) {
+			// Deep merge notification preferences
+			const currentPrefs = organization.notificationPreferences.toObject();
+			
+			for (const key of Object.keys(notificationPreferences)) {
+				if (currentPrefs[key] && typeof notificationPreferences[key] === 'object') {
+					currentPrefs[key] = {
+						...currentPrefs[key],
+						...notificationPreferences[key],
+					};
+				} else {
+					currentPrefs[key] = notificationPreferences[key];
+				}
+			}
+			
+			organization.notificationPreferences = currentPrefs;
+		}
+
+		await organization.save();
+
+		await AuditLog.create({
+			organizationId: organization._id,
+			userId: req.userId,
+			action: "NOTIFICATION_PREFERENCES_UPDATED",
+			metadata: { notificationPreferences },
+			ipAddress: req.ip,
+		});
+
+		res.status(200).json({
+			success: true,
+			message: "Notification preferences updated successfully",
+			organization,
+		});
+	} catch (error) {
+		console.log("Error in updateNotificationPreferences ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Legacy endpoint - update all settings at once
+export const updateOrganizationSettings = async (req, res) => {
+	try {
+		const { 
+			workingHours, 
+			attendancePolicy, 
+			timezone, 
+			weekOffs,
+			leavePolicy,
+			notificationPreferences 
+		} = req.body;
+
+		const organization = await Organization.findById(req.user.organizationId);
+
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
+
+		if (workingHours) {
+			organization.workingHours = { 
+				...organization.workingHours.toObject(), 
+				...workingHours 
+			};
+		}
+
+		if (attendancePolicy) {
+			organization.attendancePolicy = { 
+				...organization.attendancePolicy.toObject(), 
+				...attendancePolicy 
+			};
+		}
+
+		if (leavePolicy) {
+			organization.leavePolicy = { 
+				...organization.leavePolicy.toObject(), 
+				...leavePolicy 
+			};
+		}
+
+		if (notificationPreferences) {
+			const currentPrefs = organization.notificationPreferences.toObject();
+			for (const key of Object.keys(notificationPreferences)) {
+				if (currentPrefs[key] && typeof notificationPreferences[key] === 'object') {
+					currentPrefs[key] = {
+						...currentPrefs[key],
+						...notificationPreferences[key],
+					};
+				} else {
+					currentPrefs[key] = notificationPreferences[key];
+				}
+			}
+			organization.notificationPreferences = currentPrefs;
+		}
+
+		if (timezone) {
+			organization.timezone = timezone;
+		}
+
+		if (weekOffs && Array.isArray(weekOffs)) {
+			organization.weekOffs = weekOffs;
+		}
+
+		await organization.save();
+
+		// Sync leave types if leave policy was updated
+		let syncedLeaveTypes = [];
+		if (leavePolicy) {
+			syncedLeaveTypes = await syncLeaveTypesWithPolicy(
+				organization._id,
+				organization.leavePolicy
+			);
+		}
+
+		await AuditLog.create({
+			organizationId: organization._id,
+			userId: req.userId,
 			action: "ORGANIZATION_SETTINGS_UPDATED",
-			metadata: { workingHours, attendancePolicy, timezone },
+			metadata: { 
+				workingHours, 
+				attendancePolicy, 
+				timezone, 
+				weekOffs, 
+				leavePolicy, 
+				notificationPreferences,
+				syncedLeaveTypes: syncedLeaveTypes.map(lt => lt.name)
+			},
 			ipAddress: req.ip,
 		});
 
@@ -87,6 +422,7 @@ export const updateOrganizationSettings = async (req, res) => {
 			success: true,
 			message: "Organization settings updated successfully",
 			organization,
+			leaveTypes: syncedLeaveTypes.length > 0 ? syncedLeaveTypes : undefined,
 		});
 	} catch (error) {
 		console.log("Error in updateOrganizationSettings ", error);
@@ -94,5 +430,110 @@ export const updateOrganizationSettings = async (req, res) => {
 	}
 };
 
+// Get organization policies only
+export const getOrganizationPolicies = async (req, res) => {
+	try {
+		const organization = await Organization.findById(req.user.organizationId)
+			.select('workingHours weekOffs attendancePolicy leavePolicy');
 
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
 
+		res.status(200).json({
+			success: true,
+			policies: {
+				workingHours: organization.workingHours,
+				weekOffs: organization.weekOffs,
+				attendancePolicy: organization.attendancePolicy,
+				leavePolicy: organization.leavePolicy,
+			},
+		});
+	} catch (error) {
+		console.log("Error in getOrganizationPolicies ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Get notification preferences only
+export const getNotificationPreferences = async (req, res) => {
+	try {
+		const organization = await Organization.findById(req.user.organizationId)
+			.select('notificationPreferences');
+
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
+
+		res.status(200).json({
+			success: true,
+			notificationPreferences: organization.notificationPreferences,
+		});
+	} catch (error) {
+		console.log("Error in getNotificationPreferences ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Get organization leave types
+export const getOrganizationLeaveTypes = async (req, res) => {
+	try {
+		const leaveTypes = await LeaveType.find({ 
+			orgId: req.user.organizationId 
+		}).sort({ name: 1 });
+
+		res.status(200).json({
+			success: true,
+			leaveTypes,
+		});
+	} catch (error) {
+		console.log("Error in getOrganizationLeaveTypes ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Initialize leave types for existing organization (one-time setup)
+export const initializeOrganizationLeaveTypes = async (req, res) => {
+	try {
+		const organization = await Organization.findById(req.user.organizationId);
+
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
+
+		// Check if leave types already exist
+		const existingTypes = await LeaveType.countDocuments({ 
+			orgId: organization._id 
+		});
+
+		if (existingTypes > 0) {
+			return res.status(400).json({ 
+				success: false, 
+				message: "Leave types already exist for this organization. Use update leave policy to modify them." 
+			});
+		}
+
+		// Create leave types based on current leave policy
+		const leaveTypes = await syncLeaveTypesWithPolicy(
+			organization._id,
+			organization.leavePolicy
+		);
+
+		await AuditLog.create({
+			organizationId: organization._id,
+			userId: req.userId,
+			action: "LEAVE_TYPES_INITIALIZED",
+			metadata: { leaveTypes: leaveTypes.map(lt => lt.name) },
+			ipAddress: req.ip,
+		});
+
+		res.status(201).json({
+			success: true,
+			message: "Leave types initialized successfully",
+			leaveTypes,
+		});
+	} catch (error) {
+		console.log("Error in initializeOrganizationLeaveTypes ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};

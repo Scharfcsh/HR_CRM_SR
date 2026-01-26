@@ -180,7 +180,7 @@ export const acceptInvitation = async (req, res) => {
       { session }
     );
 
-    const employeeId = await generateEmployeeId(invitation.organizationId);
+    const employeeId = await generateEmployeeId(invitation.organizationId,);
 
     await EmployeeProfile.create(
       [
@@ -188,6 +188,7 @@ export const acceptInvitation = async (req, res) => {
           userId: user[0]._id,
           organizationId: invitation.organizationId,
           employeeId,
+		  dateOfJoining: new Date(),
         },
       ],
       { session }
@@ -198,6 +199,7 @@ export const acceptInvitation = async (req, res) => {
         {
           organizationId: invitation.organizationId,
           userId: user[0]._id,
+		  fullName: name,
           action: "INVITATION_ACCEPTED",
           metadata: {
             email: invitation.email,

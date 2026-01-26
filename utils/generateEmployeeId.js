@@ -1,8 +1,8 @@
 import counterModel from "../models/counter.model.js";
 
-export async function generateEmployeeId() {
+export async function generateEmployeeId(orgId) {
   const counter = await counterModel.findOneAndUpdate(
-    { name: "employeeId" },
+    { name: "employeeId", orgId },
     { $inc: { value: 1 } },
     { new: true, upsert: true }
   );

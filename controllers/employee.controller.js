@@ -142,7 +142,7 @@ export const updateEmployeeProfile = async (req, res) => {
     await profile.save();
 
     await AuditLog.create({
-      organizationId: req.user.organizationId,
+      organizationId: profile.organizationId,
       userId: req.userId,
       action: "PROFILE_UPDATED",
       metadata: {
@@ -205,6 +205,7 @@ export const getEmployeeProfile = async (req, res) => {
     res.status(200).json({
       success: true,
       profile,
+      completion,
       profileCompletion: {
         percent: completion.profileCompletionPercent,
         completedSections: completion.completedSections,

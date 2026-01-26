@@ -1,9 +1,13 @@
 // Counter model
 import mongoose from "mongoose";
 
-
 const CounterSchema = new mongoose.Schema({
-  name: { type: String, unique: true },
+  orgId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Organization",
+    required: true,
+  },
+  name: { type: String, required: true },
   value: { type: Number, default: 0 },
 });
 
