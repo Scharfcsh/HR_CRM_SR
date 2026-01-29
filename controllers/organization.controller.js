@@ -1,6 +1,8 @@
 import Organization from "../models/organization.model.js";
 import AuditLog from "../models/audit.model.js";
 import LeaveType from "../models/leaveType.model.js";
+import LeaveBalance from "../models/leaveBalance.model.js";
+import User from "../models/user.model.js";
 
 // Leave type mappings - maps organization leave policy fields to LeaveType records
 const LEAVE_TYPE_MAPPINGS = [
@@ -39,6 +41,7 @@ const syncLeaveTypesWithPolicy = async (orgId, leavePolicy) => {
 					requiresApproval: true,
 					autoApprove: false,
 					maxPerYear: maxPerYear,
+					carryForward: mapping.category === "ANNUAL",
 				},
 				$setOnInsert: {
 					orgId,
@@ -205,11 +208,21 @@ export const updateAttendancePolicy = async (req, res) => {
 			return res.status(404).json({ success: false, message: "Organization not found" });
 		}
 
+		// Check if attendance policy was already configured
+		if (organization.attendancePolicyConfigured) {
+			return res.status(403).json({
+				success: false,
+				message: "Attendance policy has already been configured. Please contact the help desk to make changes.",
+				policyLocked: true,
+			});
+		}
+
 		if (attendancePolicy) {
 			organization.attendancePolicy = {
 				...organization.attendancePolicy.toObject(),
 				...attendancePolicy,
 			};
+			organization.attendancePolicyConfigured = true;
 		}
 
 		await organization.save();
@@ -224,7 +237,7 @@ export const updateAttendancePolicy = async (req, res) => {
 
 		res.status(200).json({
 			success: true,
-			message: "Attendance policy updated successfully",
+			message: "Attendance policy configured successfully. Note: This can only be set once.",
 			organization,
 		});
 	} catch (error) {
@@ -244,11 +257,21 @@ export const updateLeavePolicy = async (req, res) => {
 			return res.status(404).json({ success: false, message: "Organization not found" });
 		}
 
+		// Check if leave policy was already configured
+		if (organization.leavePolicyConfigured) {
+			return res.status(403).json({
+				success: false,
+				message: "Leave policy has already been configured. Please contact the help desk to make changes.",
+				policyLocked: true,
+			});
+		}
+
 		if (leavePolicy) {
 			organization.leavePolicy = {
 				...organization.leavePolicy.toObject(),
 				...leavePolicy,
 			};
+			organization.leavePolicyConfigured = true;
 		}
 
 		await organization.save();
@@ -259,19 +282,58 @@ export const updateLeavePolicy = async (req, res) => {
 			organization.leavePolicy
 		);
 
+		// Initialize leave balances for all active employees
+		const currentYear = new Date().getFullYear();
+		const employees = await User.find({
+			organizationId: organization._id,
+			isActive: true,
+		});
+
+		const operations = [];
+		for (const employee of employees) {
+			for (const leaveType of syncedLeaveTypes) {
+				operations.push({
+					updateOne: {
+						filter: {
+							userId: employee._id,
+							leaveTypeId: leaveType._id,
+							year: currentYear,
+						},
+						update: {
+							$setOnInsert: {
+								orgId: organization._id,
+								used: 0,
+								currentBalance: leaveType.category === "ANNUAL" ? 0 : leaveType.maxPerYear,
+							},
+						},
+						upsert: true,
+					},
+				});
+			}
+		}
+
+		if (operations.length > 0) {
+			await LeaveBalance.bulkWrite(operations);
+		}
+
 		await AuditLog.create({
 			organizationId: organization._id,
 			userId: req.userId,
 			action: "LEAVE_POLICY_UPDATED",
-			metadata: { leavePolicy, syncedLeaveTypes: syncedLeaveTypes.map(lt => lt.name) },
+			metadata: { 
+				leavePolicy, 
+				syncedLeaveTypes: syncedLeaveTypes.map(lt => lt.name),
+				balancesInitialized: employees.length,
+			},
 			ipAddress: req.ip,
 		});
 
 		res.status(200).json({
 			success: true,
-			message: "Leave policy updated successfully",
+			message: `Leave policy configured successfully. Leave balances initialized for ${employees.length} employees. Note: This can only be set once.`,
 			organization,
 			leaveTypes: syncedLeaveTypes,
+			balancesInitialized: employees.length,
 		});
 	} catch (error) {
 		console.log("Error in updateLeavePolicy ", error);
@@ -330,6 +392,7 @@ export const updateNotificationPreferences = async (req, res) => {
 };
 
 // Legacy endpoint - update all settings at once
+// NOTE: This endpoint should be deprecated. Use individual endpoints instead.
 export const updateOrganizationSettings = async (req, res) => {
 	try {
 		const { 
@@ -347,6 +410,23 @@ export const updateOrganizationSettings = async (req, res) => {
 			return res.status(404).json({ success: false, message: "Organization not found" });
 		}
 
+		// Check if trying to update locked policies
+		if (attendancePolicy && organization.attendancePolicyConfigured) {
+			return res.status(403).json({
+				success: false,
+				message: "Attendance policy has already been configured. Please contact the help desk to make changes.",
+				policyLocked: true,
+			});
+		}
+
+		if (leavePolicy && organization.leavePolicyConfigured) {
+			return res.status(403).json({
+				success: false,
+				message: "Leave policy has already been configured. Please contact the help desk to make changes.",
+				policyLocked: true,
+			});
+		}
+
 		if (workingHours) {
 			organization.workingHours = { 
 				...organization.workingHours.toObject(), 
@@ -359,6 +439,7 @@ export const updateOrganizationSettings = async (req, res) => {
 				...organization.attendancePolicy.toObject(), 
 				...attendancePolicy 
 			};
+			organization.attendancePolicyConfigured = true;
 		}
 
 		if (leavePolicy) {
@@ -366,6 +447,7 @@ export const updateOrganizationSettings = async (req, res) => {
 				...organization.leavePolicy.toObject(), 
 				...leavePolicy 
 			};
+			organization.leavePolicyConfigured = true;
 		}
 
 		if (notificationPreferences) {
@@ -393,13 +475,49 @@ export const updateOrganizationSettings = async (req, res) => {
 
 		await organization.save();
 
-		// Sync leave types if leave policy was updated
+		// Sync leave types and initialize balances if leave policy was updated
 		let syncedLeaveTypes = [];
+		let balancesInitialized = 0;
 		if (leavePolicy) {
 			syncedLeaveTypes = await syncLeaveTypesWithPolicy(
 				organization._id,
 				organization.leavePolicy
 			);
+
+			// Initialize leave balances for all active employees
+			const currentYear = new Date().getFullYear();
+			const employees = await User.find({
+				organizationId: organization._id,
+				isActive: true,
+			});
+
+			const operations = [];
+			for (const employee of employees) {
+				for (const leaveType of syncedLeaveTypes) {
+					operations.push({
+						updateOne: {
+							filter: {
+								userId: employee._id,
+								leaveTypeId: leaveType._id,
+								year: currentYear,
+							},
+							update: {
+								$setOnInsert: {
+									orgId: organization._id,
+									used: 0,
+									currentBalance: leaveType.category === "ANNUAL" ? 0 : leaveType.maxPerYear,
+								},
+							},
+							upsert: true,
+						},
+					});
+				}
+			}
+
+			if (operations.length > 0) {
+				await LeaveBalance.bulkWrite(operations);
+			}
+			balancesInitialized = employees.length;
 		}
 
 		await AuditLog.create({
@@ -413,7 +531,8 @@ export const updateOrganizationSettings = async (req, res) => {
 				weekOffs, 
 				leavePolicy, 
 				notificationPreferences,
-				syncedLeaveTypes: syncedLeaveTypes.map(lt => lt.name)
+				syncedLeaveTypes: syncedLeaveTypes.map(lt => lt.name),
+				balancesInitialized,
 			},
 			ipAddress: req.ip,
 		});
@@ -423,6 +542,7 @@ export const updateOrganizationSettings = async (req, res) => {
 			message: "Organization settings updated successfully",
 			organization,
 			leaveTypes: syncedLeaveTypes.length > 0 ? syncedLeaveTypes : undefined,
+			balancesInitialized: balancesInitialized > 0 ? balancesInitialized : undefined,
 		});
 	} catch (error) {
 		console.log("Error in updateOrganizationSettings ", error);
@@ -434,7 +554,7 @@ export const updateOrganizationSettings = async (req, res) => {
 export const getOrganizationPolicies = async (req, res) => {
 	try {
 		const organization = await Organization.findById(req.user.organizationId)
-			.select('workingHours weekOffs attendancePolicy leavePolicy');
+			.select('workingHours weekOffs attendancePolicy attendancePolicyConfigured leavePolicy leavePolicyConfigured');
 
 		if (!organization) {
 			return res.status(404).json({ success: false, message: "Organization not found" });
@@ -446,7 +566,9 @@ export const getOrganizationPolicies = async (req, res) => {
 				workingHours: organization.workingHours,
 				weekOffs: organization.weekOffs,
 				attendancePolicy: organization.attendancePolicy,
+				attendancePolicyConfigured: organization.attendancePolicyConfigured,
 				leavePolicy: organization.leavePolicy,
+				leavePolicyConfigured: organization.leavePolicyConfigured,
 			},
 		});
 	} catch (error) {

@@ -2,7 +2,9 @@ import LeaveRequest from "../models/leaveRequest.model.js";
 import LeaveType from "../models/leaveType.model.js";
 import LeaveBalance from "../models/leaveBalance.model.js";
 import User from "../models/user.model.js";
+import Organization from "../models/organization.model.js";
 import AuditLog from "../models/audit.model.js";
+import EmployeeProfile from "../models/employee.model.js";
 
 // ==================== LEAVE TYPES ====================
 
@@ -219,14 +221,13 @@ export const setLeaveBalance = async (req, res) => {
     });
 
     const used = existingBalance?.used || 0;
-    const remaining = total - used;
+    const newBalance = total - used;
 
     const balance = await LeaveBalance.findOneAndUpdate(
       { userId: employeeId, leaveTypeId, year },
       {
         orgId: req.user.organizationId,
-        total,
-        remaining: Math.max(0, remaining),
+        currentBalance: Math.max(0, newBalance),
       },
       { upsert: true, new: true }
     );
@@ -276,7 +277,7 @@ export const initializeLeaveBalances = async (req, res) => {
               $setOnInsert: {
                 orgId: req.user.organizationId,
                 used: 0,
-                currentBalance: 0,
+                currentBalance: leaveType.category === "ANNUAL" ? 0 : leaveType.maxPerYear,
               },
             },
             upsert: true,
@@ -329,8 +330,44 @@ export const createLeaveRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: "Start date cannot be after end date" });
     }
 
-    // Calculate total days (excluding weekends optionally)
-    const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    // Fetch organization to get week offs
+    const organization = await Organization.findById(user.organizationId);
+    if (!organization) {
+      return res.status(404).json({ success: false, message: "Organization not found" });
+    }
+
+    // Map day names to JS day numbers (0 = Sunday, 1 = Monday, etc.)
+    const dayNameToNumber = {
+      SUN: 0,
+      MON: 1,
+      TUE: 2,
+      WED: 3,
+      THU: 4,
+      FRI: 5,
+      SAT: 6,
+    };
+
+    const weekOffDays = (organization.weekOffs || ["SAT", "SUN"]).map(
+      (day) => dayNameToNumber[day]
+    );
+
+    // Calculate working days (excluding organization week offs)
+    let totalDays = 0;
+    const currentDate = new Date(start);
+    while (currentDate <= end) {
+      const dayOfWeek = currentDate.getDay();
+      if (!weekOffDays.includes(dayOfWeek)) {
+        totalDays++;
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    if (totalDays === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Selected dates only contain week offs. Please select working days.",
+      });
+    }
 
     // Check leave type exists
     const leaveType = await LeaveType.findOne({
@@ -350,10 +387,10 @@ export const createLeaveRequest = async (req, res) => {
       year,
     });
 
-    if (balance && balance.remaining < totalDays) {
+    if (balance && balance.currentBalance < totalDays) {
       return res.status(400).json({
         success: false,
-        message: `Insufficient leave balance. Available: ${balance.remaining} days`,
+        message: `Insufficient leave balance. Available: ${balance.currentBalance} days`,
       });
     }
 
@@ -387,7 +424,7 @@ export const createLeaveRequest = async (req, res) => {
     // If auto-approved, update balance immediately
     if (leaveType.autoApprove && balance) {
       balance.used += totalDays;
-      balance.remaining -= totalDays;
+      balance.currentBalance -= totalDays;
       await balance.save();
     }
 
@@ -586,14 +623,14 @@ export const approveLeaveRequest = async (req, res) => {
     });
 
     if (balance) {
-      if (balance.remaining < leaveRequest.totalDays) {
+      if (balance.currentBalance < leaveRequest.totalDays) {
         return res.status(400).json({
           success: false,
-          message: `Insufficient leave balance for employee. Available: ${balance.remaining} days`,
+          message: `Insufficient leave balance for employee. Available: ${balance.currentBalance} days`,
         });
       }
       balance.used += leaveRequest.totalDays;
-      balance.remaining -= leaveRequest.totalDays;
+      balance.currentBalance -= leaveRequest.totalDays;
       await balance.save();
     }
 
@@ -674,9 +711,37 @@ export const getEmployeesOnLeave = async (req, res) => {
       endDate: { $gte: targetDate },
     })
       .populate("userId", "name email")
-      .populate("leaveTypeId", "name category");
+      .populate("leaveTypeId", "name category")
+      .lean();
 
-    res.status(200).json({ success: true, onLeave });
+  
+    const userIds = onLeave.map((leave) => leave.userId?._id || leave.userId);
+    const employees = await EmployeeProfile.find({ userId: { $in: userIds } }).lean();
+
+    // Create a map for quick lookup
+    const employeeMap = new Map(
+      employees.map((emp) => [emp.userId.toString(), emp])
+    );
+
+    // Attach employee info to each leave record
+    const enrichedOnLeave = onLeave.map((leave) => {
+      const userIdStr = leave.userId?._id?.toString() || leave.userId?.toString();
+      const employee = employeeMap.get(userIdStr);
+      return {
+        ...leave,
+        employee: employee
+          ? {
+              _id: employee._id,
+              employeeId: employee.employeeId,
+              department: employee.department,
+              position: employee.position,
+              fullName: employee.fullName,
+            }
+          : null,
+      };
+    });
+
+    res.status(200).json({ success: true, onLeave: enrichedOnLeave });
   } catch (error) {
     console.log("Error in getEmployeesOnLeave:", error);
     res.status(500).json({ success: false, message: error.message });

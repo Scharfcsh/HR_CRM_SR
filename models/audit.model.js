@@ -38,6 +38,10 @@ const AuditLogSchema = new mongoose.Schema(
         "ATTENDANCE_POLICY_UPDATED",
         "WORKING_HOURS_UPDATED",
         "ORGANIZATION_INFO_UPDATED",
+        "CREATE_LEAVE_REQUEST",
+        "APPROVE_LEAVE_REQUEST",
+        "PAYROLL_GENERATED",
+        "SALARY_STRUCTURE_UPDATED"
       ],
       required: true,
     }, // e.g. "CHECK_IN"

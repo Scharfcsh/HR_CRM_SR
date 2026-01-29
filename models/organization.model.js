@@ -33,37 +33,21 @@ const OrganizationSchema = new mongoose.Schema(
       autoCheckOut: { type: Boolean, default: false },
       autoCheckOutTime: { type: String, default: "23:59" },
     },
+    attendancePolicyConfigured: { type: Boolean, default: false },
 
     leavePolicy: {
-      annualLeave: {
-        status: { type: Boolean, default: true },
-        days: { type: Number, default: 15 },
-      },
-      sickLeave: {
-        status: { type: Boolean, default: true },
-        days: { type: Number, default: 12 },
-      },
-      casualLeave: {
-        status: { type: Boolean, default: true },
-        days: { type: Number, default: 10 },
-      },
-      maternityLeave: {
-        status: { type: Boolean, default: true },
-        days: { type: Number, default: 90 },
-      },
-      paternityLeave: {
-        status: { type: Boolean, default: true },
-        days: { type: Number, default: 15 },
-      },
-      unpaidLeave: {
-        status: { type: Boolean, default: true },
-        days: { type: Number, default: 30 },
-      },
+      annualLeave: { type: Number, default: 15 },
+      sickLeave: { type: Number, default: 12 },
+      casualLeave: { type: Number, default: 10 },
+      maternityLeave: { type: Number, default: 90 },
+      paternityLeave: { type: Number, default: 15 },
+      unpaidLeave: { type: Number, default: 30 },
       carryForwardLimit: { type: Number, default: 5 }, // Max leaves that can be carried forward
       allowCarryForward: { type: Boolean, default: true },
       minNoticeDays: { type: Number, default: 3 }, // Min days notice required for leave
       maxConsecutiveDays: { type: Number, default: 15 }, // Max consecutive leave days allowed
     },
+    leavePolicyConfigured: { type: Boolean, default: false },
 
     notificationPreferences: {
       absentAlerts: {

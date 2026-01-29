@@ -4,11 +4,12 @@ import User from "../models/user.model.js";
 
 export const checkIn = async (req, res) => {
 	try {
+		const currentdate = new Date();
 		// Check for existing open session
 		// console.log("req.userId", req.user);
 		const existingSession = await Attendance.findOne({
 			userId: req.userId,
-			checkOut: null,
+			date: currentdate
 		});
 
 		if (existingSession) {
@@ -19,6 +20,7 @@ export const checkIn = async (req, res) => {
 
 		const attendance = await Attendance.create({
 			organizationId: user.organizationId,
+			date: new Date(),
 			userId: req.userId,
 			checkIn: new Date(),
 			status: "PRESENT",
@@ -47,14 +49,28 @@ export const checkIn = async (req, res) => {
 
 export const checkOut = async (req, res) => {
 	try {
+		// Get today's date range
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+		const tomorrow = new Date(today);
+		tomorrow.setDate(tomorrow.getDate() + 1);
+
 		const attendance = await Attendance.findOne({
 			userId: req.userId,
-			checkOut: null,
+			date: {
+				$gte: today,
+				$lt: tomorrow
+			}
 		});
 
 		if (!attendance) {
-			return res.status(400).json({ success: false, message: "No open check-in session found" });
+			return res.status(400).json({ success: false, message: "No check-in found for today" });
 		}
+
+		if (attendance.checkOut) {
+			return res.status(400).json({ success: false, message: "Already checked out for today" });
+		}
+
 		const user = await User.findById(req.userId);
 
 		attendance.checkOut = new Date();

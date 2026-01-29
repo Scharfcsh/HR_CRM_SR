@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import path from "path";
 
 import { connectDB } from "./db/connectDB.js";
+import { autoCheckoutCronJob } from "./cronJobs/Attendence.js";
 
 import authRoutes from "./routes/auth.route.js";
 import organizationRoutes from "./routes/organization.route.js";
@@ -17,6 +18,7 @@ import auditRoutes from "./routes/audit.route.js";
 import tokenRoutes from "./routes/token.route.js";
 import healthRoutes from "./routes/health.route.js";
 import leaveRoutes from "./routes/leave.route.js";
+import payrollRoutes from "./routes/payroll.route.js";
 
 dotenv.config();
 
@@ -41,6 +43,7 @@ app.use("/api/audit-logs", auditRoutes);
 app.use("/api/tokens", tokenRoutes);
 app.use("/api/health", healthRoutes);
 app.use("/api/leave", leaveRoutes);
+app.use("/api/payroll", payrollRoutes);
 
 // if (process.env.NODE_ENV === "production") {
 // 	app.use(express.static(path.join(__dirname, "/frontend/dist")));
@@ -52,5 +55,6 @@ app.use("/api/leave", leaveRoutes);
 
 app.listen(PORT, () => {
 	connectDB();
+	autoCheckoutCronJob(); // Start the auto-checkout cron job
 	console.log("Server is running on port: ", PORT);
 });

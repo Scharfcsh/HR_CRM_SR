@@ -45,7 +45,13 @@ router.get("/balance/employee/:employeeId", verifyToken, requireRole("SUPER_ADMI
 router.post("/balance", verifyToken, requireRole("SUPER_ADMIN", "ADMIN"), setLeaveBalance);
 router.post("/balance/initialize", verifyToken, requireRole("SUPER_ADMIN", "ADMIN"), initializeLeaveBalances);
 
+
+// Super Admin - rolling leave processing 
+
 router.patch("/balance/rolling", verifyToken, requireRole("SUPER_ADMIN"), rollingLeaveProcessing);
+
+
+
 
 // ==================== LEAVE REQUESTS ====================
 // Employee - manage own requests
