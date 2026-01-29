@@ -186,6 +186,7 @@ export const acceptInvitation = async (req, res) => {
       [
         {
           userId: user[0]._id,
+		  fullName: name,
           organizationId: invitation.organizationId,
           employeeId,
 		  dateOfJoining: new Date(),
