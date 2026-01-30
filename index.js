@@ -30,9 +30,36 @@ app.use(cors({ origin: [process.env.FRONTEND_ORIGIN],
 	methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
 	credentials: true 
 }));
+
+const allowedOrigins = [process.env.FRONTEND_ORIGIN];
+
+
+app.use((req, res, next) => {
+
+  const origin = req.headers.origin;
+
+  if (allowedOrigins.includes(origin)) {
+
+    res.header('Access-Control-Allow-Origin', origin);
+
+  }
+
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+
+    return res.status(200).end();
+
+  }
+
+  next();
+
+});
 // app.use(cors({ origin: "*", credentials: true }));
 
-app.use(express.json()); // allows us to parse incoming requests:req.body
+app.use(express.json({limit: '5mb'})); // allows us to parse incoming requests:req.body
 app.use(cookieParser()); // allows us to parse incoming cookies
 
 app.use("/api/auth", authRoutes);
