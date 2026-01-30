@@ -3,6 +3,7 @@ import SalaryStructure from "../models/salaryStructure.model.js";
 import EmployeeProfile from "../models/employee.model.js";
 import User from "../models/user.model.js";
 import AuditLog from "../models/audit.model.js";
+import Organization from "../models/organization.model.js";
 
 // ============== ADMIN CONTROLLERS ==============
 
@@ -439,9 +440,14 @@ export const getPayslipById = async (req, res) => {
         .json({ success: false, message: "Payslip not found" });
     }
 
+    // Fetch organization for logo and name
+    const organization = await Organization.findById(req.user.organizationId)
+      .select("name logo address");
+
     res.status(200).json({
       success: true,
       payslip,
+      organization,
     });
   } catch (error) {
     console.error("Error in getPayslipById:", error);

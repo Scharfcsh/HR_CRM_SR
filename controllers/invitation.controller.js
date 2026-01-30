@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import Invitation from "../models/invite.model.js";
 import User from "../models/user.model.js";
+import Organization from "../models/organization.model.js";
 import bcryptjs from "bcryptjs";
 import { generateTokenAndSetCookie } from "../utils/generateTokenAndSetCookie.js";
 import { sendInvitationEmail } from "../nodemailer/email.service.js";
@@ -49,9 +50,13 @@ export const createInvitation = async (req, res) => {
 			expiresAt,
 		});
 
+		// Fetch organization name for email
+		const organization = await Organization.findById(req.user.organizationId);
+		const organizationName = organization?.name || 'Our Organization';
+
 		// Send invitation email
 		//TODO: need to implement async email sending with queue
-		await sendInvitationEmail(email, token);
+		await sendInvitationEmail(email, token, organizationName);
 
 		await AuditLog.create({
 			organizationId: req.user.organizationId,

@@ -41,7 +41,9 @@ const AuditLogSchema = new mongoose.Schema(
         "CREATE_LEAVE_REQUEST",
         "APPROVE_LEAVE_REQUEST",
         "PAYROLL_GENERATED",
-        "SALARY_STRUCTURE_UPDATED"
+        "SALARY_STRUCTURE_UPDATED",
+        "INVITATION_REVOKED",
+        "ORGANIZATION_LOGO_UPDATED"
       ],
       required: true,
     }, // e.g. "CHECK_IN"

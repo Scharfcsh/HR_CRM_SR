@@ -3,6 +3,7 @@ import AuditLog from "../models/audit.model.js";
 import LeaveType from "../models/leaveType.model.js";
 import LeaveBalance from "../models/leaveBalance.model.js";
 import User from "../models/user.model.js";
+import cloudinary from "../cloudinary/config.cloudinary.js";
 
 // Leave type mappings - maps organization leave policy fields to LeaveType records
 const LEAVE_TYPE_MAPPINGS = [
@@ -656,6 +657,80 @@ export const initializeOrganizationLeaveTypes = async (req, res) => {
 		});
 	} catch (error) {
 		console.log("Error in initializeOrganizationLeaveTypes ", error);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// Update organization logo
+export const updateOrganizationLogo = async (req, res) => {
+	try {
+		if (!req.file) {
+			return res.status(400).json({ success: false, message: "No file uploaded" });
+		}
+
+		const organization = await Organization.findById(req.user.organizationId);
+
+		if (!organization) {
+			return res.status(404).json({ success: false, message: "Organization not found" });
+		}
+
+		// Delete old logo from Cloudinary if exists
+		if (organization.logo) {
+			try {
+				// Extract public_id from the URL
+				const urlParts = organization.logo.split('/');
+				const publicIdWithExtension = urlParts.slice(-2).join('/'); // e.g., "org-logos/abc123"
+				const publicId = publicIdWithExtension.replace(/\.[^/.]+$/, ""); // Remove extension
+				await cloudinary.uploader.destroy(publicId);
+			} catch (deleteError) {
+				console.log("Error deleting old logo:", deleteError);
+				// Continue even if deletion fails
+			}
+		}
+
+		// Upload new logo to Cloudinary
+		const uploadResult = await new Promise((resolve, reject) => {
+			cloudinary.uploader.upload_stream(
+				{ 
+					resource_type: 'image',
+					folder: 'org-logos',
+					transformation: [
+						{ width: 400, height: 400, crop: 'limit' },
+						{ quality: 'auto' }
+					]
+				}, 
+				(error, result) => {
+					if (error) {
+						reject(error);
+					} else {
+						resolve(result);
+					}
+				}
+			).end(req.file.buffer);
+		});
+
+		// Update organization with new logo URL
+		organization.logo = uploadResult.secure_url;
+		await organization.save();
+
+		await AuditLog.create({
+			organizationId: organization._id,
+			userId: req.userId,
+			action: "ORGANIZATION_LOGO_UPDATED",
+			metadata: { 
+				logoUrl: uploadResult.secure_url,
+				publicId: uploadResult.public_id 
+			},
+			ipAddress: req.ip,
+		});
+
+		res.status(200).json({
+			success: true,
+			message: "Organization logo updated successfully",
+			logo: uploadResult.secure_url,
+		});
+	} catch (error) {
+		console.log("Error in updateOrganizationLogo ", error);
 		res.status(500).json({ success: false, message: error.message });
 	}
 };

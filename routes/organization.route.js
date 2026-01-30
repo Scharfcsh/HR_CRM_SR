@@ -12,9 +12,11 @@ import {
 	getNotificationPreferences,
 	getOrganizationLeaveTypes,
 	initializeOrganizationLeaveTypes,
+	updateOrganizationLogo,
 } from "../controllers/organization.controller.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 import { requireRole } from "../middleware/requireRole.js";
+import { upload } from "../cloudinary/config.cloudinary.js";
 
 const router = express.Router();
 
@@ -43,5 +45,8 @@ router.patch("/working-hours", verifyToken, requireRole("SUPER_ADMIN", "ADMIN"),
 router.patch("/attendance-policy", verifyToken, requireRole("SUPER_ADMIN", "ADMIN"), updateAttendancePolicy);
 router.patch("/leave-policy", verifyToken, requireRole("SUPER_ADMIN", "ADMIN"), updateLeavePolicy);
 router.patch("/notifications", verifyToken, requireRole("SUPER_ADMIN", "ADMIN"), updateNotificationPreferences);
+
+// Upload organization logo (ADMIN and SUPER_ADMIN only)
+router.patch("/logo", verifyToken, requireRole("SUPER_ADMIN", "ADMIN"), upload.single("logo"), updateOrganizationLogo);
 
 export default router;

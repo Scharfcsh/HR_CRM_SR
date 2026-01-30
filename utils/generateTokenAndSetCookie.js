@@ -30,7 +30,8 @@ export const generateTokenAndSetCookie = async (res, userId, user) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
-    maxAge: 15 * 60 * 1000, // 15 minutes
+    // maxAge: 15 * 60 * 1000, // 15 minutes
+    maxAge: 1 * 60 * 1000, // 1 minute
   });
 
   // Set refresh token as httpOnly cookie

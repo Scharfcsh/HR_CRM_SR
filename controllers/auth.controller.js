@@ -87,7 +87,7 @@ export const signup = async (req, res) => {
     generateTokenAndSetCookie(res, user[0]._id, user[0]); 
 
     // async / queue later
-    await sendVerificationEmail(user[0].email, verificationToken);
+    await sendVerificationEmail(user[0].email, verificationToken, organizationName);
 
     return res.status(201).json({
       success: true,
@@ -155,7 +155,11 @@ export const verifyEmail = async (req, res) => {
 		tokenRecord.isUsed = true;
 		await tokenRecord.save();
 
-		await sendWelcomeEmail(user.email, user.email);
+		// Fetch organization name for welcome email
+		const organization = await Organization.findById(user.organizationId);
+		const organizationName = organization?.name || 'Our Platform';
+
+		await sendWelcomeEmail(user.email, user.name, organizationName);
 
 		res.status(200).json({
 			success: true,
@@ -297,8 +301,12 @@ export const forgotPassword = async (req, res) => {
 			expiresAt: new Date(Date.now() + 1 * 60 * 60 * 1000), // 1 hour
 		});
 
+		// Fetch organization name for email
+		const organization = await Organization.findById(user.organizationId);
+		const organizationName = organization?.name || 'Our Platform';
+
 		// send email
-		await sendPasswordResetEmail(user.email, `${process.env.CLIENT_URL}/reset-password/${resetToken}`);
+		await sendPasswordResetEmail(user.email, `${process.env.CLIENT_URL}/reset-password/${resetToken}`, organizationName);
 
 		res.status(200).json({ success: true, message: "Password reset link sent to your email" });
 	} catch (error) {
@@ -340,7 +348,11 @@ export const resetPassword = async (req, res) => {
 		tokenRecord.isUsed = true;
 		await tokenRecord.save();
 
-		await sendResetSuccessEmail(user.email);
+		// Fetch organization name for email
+		const organization = await Organization.findById(user.organizationId);
+		const organizationName = organization?.name || 'Our Platform';
+
+		await sendResetSuccessEmail(user.email, organizationName);
 
 		res.status(200).json({ success: true, message: "Password reset successful" });
 	} catch (error) {

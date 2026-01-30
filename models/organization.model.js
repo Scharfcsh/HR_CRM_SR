@@ -4,7 +4,7 @@ const OrganizationSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     timezone: { type: String, default: "Asia/Kolkata" },
-
+    logoUrl: { type: String },
     // Organization Info
     industry: { type: String, trim: true },
     address: { type: String, trim: true },

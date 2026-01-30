@@ -7,13 +7,13 @@ import {
 } from "./emailTemplates.js";
 import { transporter } from "./nodemailer.config.js";
 
-export const sendVerificationEmail = async (email, verificationToken) => {
+export const sendVerificationEmail = async (email, verificationToken, organizationName) => {
 	try {
 		const info = await transporter.sendMail({
-			from: process.env.SMTP_USER,
+			from: `"${organizationName} HR" <${process.env.SMTP_USER}>`,
 			to: email,
-			subject: "Verify your email",
-			html: VERIFICATION_EMAIL_TEMPLATE(verificationToken),
+			subject: `Verify your email - ${organizationName}`,
+			html: VERIFICATION_EMAIL_TEMPLATE(verificationToken, organizationName),
 		});
 
 		console.log("Email sent successfully", info.messageId);
@@ -24,15 +24,13 @@ export const sendVerificationEmail = async (email, verificationToken) => {
 	}
 };
 
-export const sendWelcomeEmail = async (email, name) => {
+export const sendWelcomeEmail = async (email, name, organizationName) => {
 	try {
-		
-		
 		const info = await transporter.sendMail({
-			from: process.env.SMTP_USER,
+			from: `"${organizationName} HR" <${process.env.SMTP_USER}>`,
 			to: email,
-			subject: "Welcome to Auth Company",
-			html: WELCOME_EMAIL_TEMPLATE(name),
+			subject: `Welcome to ${organizationName}`,
+			html: WELCOME_EMAIL_TEMPLATE(name, organizationName),
 		});
 
 		console.log("Welcome email sent successfully", info.messageId);
@@ -43,15 +41,13 @@ export const sendWelcomeEmail = async (email, name) => {
 	}
 };
 
-export const sendPasswordResetEmail = async (email, resetURL) => {
+export const sendPasswordResetEmail = async (email, resetURL, organizationName) => {
 	try {
-		
-		
 		const info = await transporter.sendMail({
-			from: process.env.SMTP_USER,
+			from: `"${organizationName} HR" <${process.env.SMTP_USER}>`,
 			to: email,
-			subject: "Reset your password",
-			html: PASSWORD_RESET_REQUEST_TEMPLATE(resetURL),
+			subject: `Reset your password - ${organizationName}`,
+			html: PASSWORD_RESET_REQUEST_TEMPLATE(resetURL, organizationName),
 		});
 
 		console.log("Password reset email sent successfully", info.messageId);
@@ -62,13 +58,13 @@ export const sendPasswordResetEmail = async (email, resetURL) => {
 	}
 };
 
-export const sendResetSuccessEmail = async (email) => {
+export const sendResetSuccessEmail = async (email, organizationName) => {
 	try {
 		const info = await transporter.sendMail({
-			from: process.env.SMTP_USER,
+			from: `"${organizationName} HR" <${process.env.SMTP_USER}>`,
 			to: email,
-			subject: "Password Reset Successful",
-			html: PASSWORD_RESET_SUCCESS_TEMPLATE,
+			subject: `Password Reset Successful - ${organizationName}`,
+			html: PASSWORD_RESET_SUCCESS_TEMPLATE(organizationName),
 		});
 
 		console.log("Password reset success email sent successfully", info.messageId);
@@ -79,15 +75,15 @@ export const sendResetSuccessEmail = async (email) => {
 	}
 };
 
-export const sendInvitationEmail = async (email, token) => {
+export const sendInvitationEmail = async (email, token, organizationName) => {
 	try {
 		const inviteURL = `${process.env.FRONTEND_ORIGIN}/auth/invitation?token=${token}`;
 		
 		const info = await transporter.sendMail({
-			from: process.env.SMTP_USER,
+			from: `"${organizationName} HR" <${process.env.SMTP_USER}>`,
 			to: email,
-			subject: "You're Invited to Join Our Organization",
-			html: INVITATION_EMAIL_TEMPLATE(inviteURL),
+			subject: `You're Invited to Join ${organizationName}`,
+			html: INVITATION_EMAIL_TEMPLATE(inviteURL, organizationName),
 		});
 
 		console.log("Invitation email sent successfully", info.messageId);

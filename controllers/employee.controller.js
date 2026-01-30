@@ -194,7 +194,7 @@ export const getEmployeeProfile = async (req, res) => {
       });
     }
 
-    console.log("Fetched profile: ", profile);
+    // console.log("Fetched profile: ", profile);
 
     const completion = calculateEmployeeProfileCompletion(profile);
 
