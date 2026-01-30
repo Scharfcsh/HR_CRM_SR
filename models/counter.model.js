@@ -7,8 +7,10 @@ const CounterSchema = new mongoose.Schema({
     ref: "Organization",
     required: true,
   },
-  name: { type: String, required: true },
   value: { type: Number, default: 0 },
-});
+}, { timestamps: true });
+
+// Compound unique index: each organization can have its own counter for each name
+CounterSchema.index({ orgId: 1 }, { unique: true });
 
 export default mongoose.model("Counter", CounterSchema);

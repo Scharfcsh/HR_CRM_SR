@@ -16,7 +16,7 @@ const EmployeeProfileSchema = new mongoose.Schema(
       index: true,
     },
 
-    employeeId: { type: String, unique: true, required: true, index: true },
+    employeeId: { type: String,required: true, index: true },
     position: { type: String },
     department: { type: String },
 
